@@ -1,71 +1,102 @@
 library(shiny)
 library(ggplot2)
 
-server <- function(input, output) {
-  
-  datos <- eventReactive(input$calcular, {
-    error_estandar <- input$desv / sqrt(input$n)
-    z_calculado <- (input$media_m - input$media_p) / error_estandar
-    
-    alfa <- input$alfa
-    if(input$tipo_prueba == "izq") {
-      z_critico <- qnorm(alfa)
-    } else if(input$tipo_prueba == "der") {
-      z_critico <- qnorm(1 - alfa)
-    } else {
-      z_critico <- qnorm(c(alfa/2, 1 - alfa/2))
-    }
-    
-    decision <- if(input$tipo_prueba == "izq" && z_calculado < z_critico ||
-                   input$tipo_prueba == "der" && z_calculado > z_critico ||
-                   input$tipo_prueba == "dos" && (abs(z_calculado) > abs(z_critico[2]))) {
-      "Rechazar Ho"
-    } else {
-      "No rechazar Ho"
-    }
-    
-    list(
-      z_calculado = z_calculado,
-      z_critico = z_critico,
-      error_estandar = error_estandar,
-      decision = decision
-    )
-  })
-  
-  output$resultados <- renderPrint({
-    res <- datos()
-    cat("Z calculado:", round(res$z_calculado, 4), "\n")
-    cat("Z crítico:", round(res$z_critico, 4), "\n")
-    cat("Error estándar:", round(res$error_estandar, 4), "\n")
-    cat("Decisión:", res$decision)
-  })
-  
-  output$grafico <- renderPlot({
-    res <- datos()
-    df <- data.frame(x = seq(-4, 4, length.out = 200))
-    df$y <- dnorm(df$x)
-    
-    p <- ggplot(df, aes(x, y)) +
-      geom_line(color = "steelblue") +
-      geom_vline(xintercept = res$z_calculado, color = "red", linetype = "dashed") +
-      labs(title = "Distribución Normal Estándar",
-           x = "Z-score",
-           y = "Densidad") +
-      theme_minimal()
-    
-    if(input$tipo_prueba == "izq") {
-      p <- p + geom_area(data = subset(df, x < res$z_critico),
-                         aes(y = y), fill = "orange", alpha = 0.3)
-    } else if(input$tipo_prueba == "der") {
-      p <- p + geom_area(data = subset(df, x > res$z_critico),
-                         aes(y = y), fill = "orange", alpha = 0.3)
-    } else {
-      p <- p + geom_area(data = subset(df, x < res$z_critico[1]),
-                         aes(y = y), fill = "orange", alpha = 0.3) +
-        geom_area(data = subset(df, x > res$z_critico[2]),
-                  aes(y = y), fill = "orange", alpha = 0.3)
-    }
-    
-    p
+server <- function(input, output, session) {
+  observeEvent(input$calc, {
+    output$result <- renderPrint({
+      alpha <- input$alpha
+      test_side <- input$test_side
+      unilateral_direction <- if(test_side == "Unilateral") input$unilateral_direccion else NA
+      
+      # Inicializar variables
+      z <- NA
+      z_crit <- NA
+      p_value <- NA
+      result_text <- ""
+      
+      # Cálculos para Media
+      if(input$test_type == "Media"){
+        xbar <- input$xbar
+        mu0 <- input$mu0
+        sigma <- input$sigma
+        n <- input$n
+        SE <- sigma / sqrt(n)
+        z <- (xbar - mu0) / SE
+        
+        if(test_side == "Bilateral"){
+          p_value <- 2 * (1 - pnorm(abs(z)))
+          z_crit <- qnorm(1 - alpha/2)
+        } else {
+          if(unilateral_direction == "Izquierda"){
+            p_value <- pnorm(z)
+            z_crit <- qnorm(alpha)
+          } else if(unilateral_direction == "Derecha"){
+            p_value <- 1 - pnorm(z)
+            z_crit <- qnorm(1 - alpha)
+          }
+        }
+        result_text <- paste0("Prueba para la Media: \n",
+                              "Z calculado = ", round(z, 3), "\n",
+                              "Z crítico = ±", round(z_crit, 3), "\n",
+                              "Valor-p = ", round(p_value, 4))
+      }
+      
+      # Cálculos para Proporción
+      else if(input$test_type == "Proporción"){
+        p_hat <- input$p_hat
+        n <- input$n_prop
+        p0 <- input$p0
+        SE <- sqrt(p0 * (1 - p0) / n)
+        z <- (p_hat - p0) / SE
+        
+        if(test_side == "Bilateral"){
+          p_value <- 2 * (1 - pnorm(abs(z)))
+          z_crit <- qnorm(1 - alpha/2)
+        } else {
+          if(unilateral_direction == "Izquierda"){
+            p_value <- pnorm(z)
+            z_crit <- qnorm(alpha)
+          } else if(unilateral_direction == "Derecha"){
+            p_value <- 1 - pnorm(z)
+            z_crit <- qnorm(1 - alpha)
+          }
+        }
+        result_text <- paste0("Prueba para Proporción: \n",
+                              "Z calculado = ", round(z, 3), "\n",
+                              "Z crítico = ±", round(z_crit, 3), "\n",
+                              "Valor-p = ", round(p_value, 4))
+      }
+      
+      # Cálculos para Diferencia de Medias
+      else if(input$test_type == "Diferencia de Medias"){
+        xbar1 <- input$xbar1
+        sigma1 <- input$sigma1
+        n1 <- input$n1
+        xbar2 <- input$xbar2
+        sigma2 <- input$sigma2
+        n2 <- input$n2
+        SE <- sqrt((sigma1^2 / n1) + (sigma2^2 / n2))
+        z <- (xbar1 - xbar2) / SE
+        
+        if(test_side == "Bilateral"){
+          p_value <- 2 * (1 - pnorm(abs(z)))
+          z_crit <- qnorm(1 - alpha/2)
+        } else {
+          if(unilateral_direction == "Izquierda"){
+            p_value <- pnorm(z)
+            z_crit <- qnorm(alpha)
+          } else if(unilateral_direction == "Derecha"){
+            p_value <- 1 - pnorm(z)
+            z_crit <- qnorm(1 - alpha)
+          }
+        }
+        result_text <- paste0("Prueba para Diferencia de Medias: \n",
+                              "Z calculado = ", round(z, 3), "\n",
+                              "Z crítico = ±", round(z_crit, 3), "\n",
+                              "Valor-p = ", round(p_value, 4))
+      }
+      
+      cat(result_text)
+    })
   })
 }
