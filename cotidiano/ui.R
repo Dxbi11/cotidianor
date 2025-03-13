@@ -1,5 +1,7 @@
 library(shiny)
 library(shinythemes)
+library(rsconnect)
+
 
 ui <- fluidPage(
   theme = shinytheme("flatly"),
